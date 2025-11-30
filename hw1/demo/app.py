@@ -3,7 +3,9 @@ from markupsafe import Markup
 from string import Template
 import html
 
-from minisearch import PositionalIndex, Searcher
+from minisearch.index import PositionalIndex
+from minisearch.search import Searcher      
+
 from .sample_docs import SAMPLE_DOCS
 
 HTML_TEMPLATE = Template("""

@@ -34,13 +34,16 @@ class PositionalIndex:
         term_map = self.postings.get(term)
         if not term_map:
             return out
+
         if field:
             for p in term_map.get(field, []):
                 out[(p.doc_id, field)] = p.positions
             return out
+
         for f, plist in term_map.items():
             for p in plist:
                 out[(p.doc_id, f)] = p.positions
+
         return out
 
     def all_terms(self, field: Optional[str] = None) -> Iterable[str]:
