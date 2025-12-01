@@ -1,6 +1,9 @@
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional, Set, Iterable
 import html, re
+import json
+import os
+
 from .index import PositionalIndex
 from .query import (
     Node, TermNode, PhraseNode, NearNode, AndNode, OrNode, NotNode, parse_query
@@ -8,9 +11,23 @@ from .query import (
 from .utils import wildcard_to_regex, edit_distance
 from .analysis import tokenize
 
+from .ranking import L1Ranker, FeatureExtractor
+
 class Searcher:
     def __init__(self, index: PositionalIndex) -> None:
         self.idx = index
+        self.fe = FeatureExtractor(index)
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        weights_path = os.path.join(base_dir, 'weights.json')
+
+        try:
+            with open(weights_path, 'r') as f:
+                self.weights = json.load(f)
+        except FileNotFoundError:
+            self.weights = [0.1, 1.0, 0.1]
+        
+        self.ranker = L1Ranker(self.fe, self.weights)
 
     def _expand_term(self, t: TermNode) -> Set[str]:
         if not t.wildcard and t.fuzzy == 0:
@@ -200,12 +217,14 @@ class Searcher:
             return set(self.idx.docs.keys()) - self.evaluate(node.child)
         return set()
     
+
     def docs_for_terms(self, terms, field):
         docs = set()
         for w in terms:
             for (doc_id, _f), _pos in self.idx.get_postings(w, field).items():
                 docs.add(doc_id)
         return docs
+    
 
     def search(self, query: str) -> List[Tuple[int, float]]:
         try: ast = parse_query(query)
@@ -215,14 +234,14 @@ class Searcher:
         if not docs: 
             return []
         
-        qw = self._collect_words(ast)
-        scores: Dict[int, float] = defaultdict(float)
+        query_terms = [t for t in tokenize(query) if t.isalnum()]
+        scored_docs: List[Tuple[int, float]] = []
         for d in docs:
-            for f in self.idx.fields:
-                toks = tokenize(self.idx.docs[d].get(f, ""))
-                scores[d] += sum(1 for w in toks if w in qw)
+            score = self.ranker.score(d, query_terms)
+            scored_docs.append((d, score))
 
-        return sorted(scores.items(), key=lambda t: (-t[1], t[0]))
+        return sorted(scored_docs, key=lambda t: (-t[1], t[0]))
+
 
     def make_snippet(self, doc_id: int, query: str, max_len: int = 200) -> str:
         from markupsafe import Markup

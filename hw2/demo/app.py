@@ -54,7 +54,7 @@ def _render_results(sr: Searcher, q: str) -> str:
         out.append(f"""
         <div class="hit">
           <h3>{html.escape(doc.get('title','(без названия)'))}</h3>
-          <small>score: {score:.0f}</small>
+          <small>score: {score:.4f}</small>
           <div style="margin-top:6px">{snip}</div>
           <div style="margin-top:8px">{tags}</div>
         </div>
@@ -65,6 +65,7 @@ def create_app():
     idx = PositionalIndex()
     for i, d in enumerate(SAMPLE_DOCS):
         idx.add_document(i, d)
+    idx.commit()
     sr = Searcher(idx)
     app = Flask(__name__)
 
