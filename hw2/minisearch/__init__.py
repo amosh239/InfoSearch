@@ -1,6 +1,6 @@
 from .analysis import normalize, tokenize
 from .utils import wildcard_to_regex, edit_distance
-from .index import Posting, PositionalIndex
+from .index import PositionalIndex
 from .query import (
     Node, TermNode, PhraseNode, NearNode, AndNode, OrNode, NotNode, parse_query
 )
