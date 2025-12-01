@@ -5,7 +5,11 @@ from .index import PositionalIndex
 from .query import parse_query, TermNode, PhraseNode, NearNode, AndNode, OrNode, NotNode
 from .analysis import tokenize
 from .ranking import L1Ranker, FeatureExtractor
-from .utils import wildcard_to_regex
+
+def wildcard_to_regex(pattern: str) -> re.Pattern:
+    esc = re.escape(pattern)
+    esc = esc.replace(r'\*', '.*').replace(r'\?', '.')
+    return re.compile('^' + esc + '$')
 
 class Searcher:
     def __init__(self, index: PositionalIndex):

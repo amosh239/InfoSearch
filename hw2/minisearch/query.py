@@ -144,4 +144,9 @@ def parse_query(raw: str) -> Node:
         if op in ('(', ')'): continue
         apply_op(op)
 
+    while len(output) > 1:
+        b = output.pop()
+        a = output.pop()
+        output.append(AndNode(a, b))
+
     return output[-1] if output else TermNode(term="")
