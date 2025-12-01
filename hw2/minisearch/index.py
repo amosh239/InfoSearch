@@ -1,7 +1,16 @@
+import re
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional
 from .analysis import tokenize
 from .compression import compress_posting_list, decompress_posting_list
+
+_TOKEN_RE = re.compile(r"[\W_]+", re.UNICODE)
+
+def normalize(text: str) -> str:
+    return text.lower()
+
+def tokenize(text: str) -> List[str]:
+    return [t for t in _TOKEN_RE.split(normalize(text)) if t]
 
 class PositionalIndex:
     def __init__(self):
