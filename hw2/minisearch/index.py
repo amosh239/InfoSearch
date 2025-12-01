@@ -1,7 +1,6 @@
 import re
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional
-from .analysis import tokenize
 from .compression import compress_posting_list, decompress_posting_list
 
 _TOKEN_RE = re.compile(r"[\W_]+", re.UNICODE)

@@ -1,15 +1,24 @@
 import json, os, re
 from typing import List, Tuple
 from markupsafe import Markup
-from .index import PositionalIndex
+from .index import PositionalIndex, tokenize
 from .query import parse_query, TermNode, PhraseNode, NearNode, AndNode, OrNode, NotNode
-from .analysis import tokenize
 from .ranking import L1Ranker, FeatureExtractor
 
 def wildcard_to_regex(pattern: str) -> re.Pattern:
-    esc = re.escape(pattern)
-    esc = esc.replace(r'\*', '.*').replace(r'\?', '.')
+    esc = re.escape(pattern).replace(r'\*', '.*').replace(r'\?', '.')
     return re.compile('^' + esc + '$')
+
+def edit_distance(s1: str, s2: str) -> int:
+    if len(s1) < len(s2): return edit_distance(s2, s1)
+    if len(s2) == 0: return len(s1)
+    prev = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        curr = [i + 1]
+        for j, c2 in enumerate(s2):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (c1 != c2)))
+        prev = curr
+    return prev[-1]
 
 class Searcher:
     def __init__(self, index: PositionalIndex):
@@ -46,9 +55,12 @@ class Searcher:
 
     def _eval_term(self, node: TermNode) -> set[int]:
         terms = {node.term}
+        
         if node.wildcard:
             rx = wildcard_to_regex(node.term)
             terms = {t for t in self.idx.postings if rx.match(t)}
+        elif node.fuzzy > 0:
+            terms = {t for t in self.idx.postings if edit_distance(t, node.term) <= node.fuzzy}
         
         docs = set()
         for t in terms:
