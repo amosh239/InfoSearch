@@ -28,7 +28,7 @@ HTML_TEMPLATE = Template("""
 </head>
 <body>
   <div class="box">
-    <h1>Мини-поисковик (учебный)</h1>
+    <h1>Поисковик</h1>
     <form method="get" action="/">
       <input autofocus name="q" type="text" placeholder='Например: title:поиск AND "обратный индекс"  или  токен NEAR/3 индекс' value="$q">
     </form>
