@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from typing import List, Optional
-from .index import PositionalIndex, tokenize
+from .index import PositionalIndex, tokenize, normalize
 
 class Node: pass
 
