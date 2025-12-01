@@ -1,48 +1,26 @@
-# compression.py
 from typing import List
 
-def encode_vbyte(number: int) -> bytes:
-    out = []
-    while True:
-        byte = number & 0x7F
-        number >>= 7
-        if number == 0:
-            out.append(byte | 0x80)
-            break
-        out.append(byte)
+def compress_posting_list(ids: List[int]) -> bytes:
+    out = bytearray()
+    last = 0
+    for n in sorted(ids):
+        delta = n - last
+        last = n
+        while delta >= 128:
+            out.append(delta & 0x7F)
+            delta >>= 7
+        out.append(delta | 0x80)
     return bytes(out)
 
-def decode_vbyte(stream: bytes):
-    n = 0
-    shift = 0
-    for byte in stream:
-        n |= (byte & 0x7F) << shift
-        if byte & 0x80:
-            yield n
-            n = 0
-            shift = 0
+def decompress_posting_list(data: bytes) -> List[int]:
+    ids = []
+    last = n = shift = 0
+    for b in data:
+        n |= (b & 0x7F) << shift
+        if b & 0x80:
+            last += n
+            ids.append(last)
+            n = shift = 0
         else:
             shift += 7
-
-def compress_posting_list(ids: List[int]) -> bytes:
-    if not ids:
-        return b""
-    sorted_ids = sorted(ids)
-    deltas = [sorted_ids[0]]
-    for i in range(1, len(sorted_ids)):
-        deltas.append(sorted_ids[i] - sorted_ids[i-1])
-    
-    buffer = bytearray()
-    for d in deltas:
-        buffer.extend(encode_vbyte(d))
-    return bytes(buffer)
-
-def decompress_posting_list(data: bytes) -> List[int]:
-    deltas = list(decode_vbyte(data))
-    if not deltas:
-        return []
-    
-    ids = [deltas[0]]
-    for i in range(1, len(deltas)):
-        ids.append(ids[-1] + deltas[i])
     return ids
