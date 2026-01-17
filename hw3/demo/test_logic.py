@@ -1,14 +1,3 @@
-"""Lightweight logic regression tests for the minisearch demo.
-
-How to run (from repo root):
-  python -m demo.test_logic
-
-Or, if you prefer running as a script:
-  python demo/test_logic.py
-
-The file is intentionally dependency-free (no pytest/unittest required).
-"""
-
 from __future__ import annotations
 
 import sys
@@ -16,7 +5,6 @@ from pathlib import Path
 from typing import Iterable, List, Set
 
 
-# Ensure project root is on sys.path (works both for -m and direct execution).
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -25,9 +13,9 @@ from minisearch.index import PositionalIndex
 from minisearch.search import Searcher
 
 try:
-    from .sample_docs import SAMPLE_DOCS  # when demo is a package
+    from .sample_docs import SAMPLE_DOCS
 except Exception:
-    from sample_docs import SAMPLE_DOCS  # when executed as a script
+    from sample_docs import SAMPLE_DOCS
 
 
 def _build_searcher() -> Searcher:
@@ -139,6 +127,17 @@ def run_tests() -> None:
     assert_search('', [], "Empty query")
     assert_no_crash('(кот AND кофе', "Unbalanced parentheses should not crash")
     assert_no_crash('"летний дождь', "Unclosed quote should not crash")
+
+    # ---------------------------------------------------------------------
+    # Quorum Matching (Resilient Query)
+    # ---------------------------------------------------------------------
+    print("\n--- Testing Quorum (Smart Fallback) ---")
+
+    assert_search('трамвай метро', [2, 4], "Quorum N=2: should act as OR")
+    assert_search('молоко хлеб масло', [3], "Quorum N=3: match 2 out of 3")
+    assert_search('трамваи дождь солнце луна', [5], "Quorum N=4: match 3 out of 4")
+    assert_search('молоко пиво чипсы', [], "Quorum N=3: 1 match is not enough")
+    assert_search('молоко AND хлеб AND масло', [], "Quorum disabled by explicit operators")
 
     print("--- Summary ---")
     if failures:
