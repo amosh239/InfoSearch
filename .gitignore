@@ -13,3 +13,5 @@ __pycache__/
 .vscode/
 
 zip hw/
+
+/hw3/notebooks/data/
