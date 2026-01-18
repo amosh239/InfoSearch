@@ -52,6 +52,7 @@ class PositionalIndex:
 
         self.doc_lengths[doc_id] = total_len
 
+
     def commit(self):
         self.avg_doc_len = (
             sum(self.doc_lengths.values()) / len(self.doc_lengths)
@@ -84,6 +85,7 @@ class PositionalIndex:
             return self.postings.get(term, {}).get(field, [])
         return self.postings_all.get(term, [])
     
+
     def get_doc_set(self, term: str, field: str | None = None) -> set[int]:
         key = (term, field)
         s = self._docset_cache.get(key)
@@ -94,8 +96,10 @@ class PositionalIndex:
         self._docset_cache[key] = s
         return s
 
+
     def get_pos_map(self, term: str, field: str) -> Dict[int, List[int]]:
         return self._pos_cache.get((term, field), {})
+
 
     @property
     def fields(self) -> Set[str]:

@@ -61,14 +61,17 @@ class Searcher:
         q_terms = [t for t in tokenize(query) if t.isalnum()]
         return self.ranker.get_scores(q_terms, candidate_ids=docs, top_k=10)
 
+
     def _is_simple_query(self, query: str) -> bool:
         specials = {"AND", "OR", "NOT", "NEAR", "(", ")", '"', ":", "*", "?", "~"}
         return not any(s in query for s in specials)
     
+
     def _quorum_k(self, n_terms: int) -> int:
         k = (n_terms - 1) if n_terms <= 3 else int(n_terms * 0.75)
         return max(1, k)
     
+
     def _eval_quorum_counts(self, query: str) -> Set[int]:
         terms = list(dict.fromkeys(t for t in tokenize(query) if t.isalnum()))
         n = len(terms)
@@ -91,7 +94,6 @@ class Searcher:
                     hit[did] += 1
 
         return {did for did, c in hit.items() if c >= k}
-
 
 
     def _eval(self, node) -> Set[int]:
@@ -130,7 +132,6 @@ class Searcher:
             if edit_distance(t, node.term) <= node.fuzzy:
                 out.update(self.idx.get_doc_ids(t, node.field))
         return out
-
 
 
     def _eval_near(self, node: NearNode) -> Set[int]:
@@ -259,4 +260,3 @@ class Searcher:
                 nxt.append(a if b is None else OrNode(a, b))
             nodes = nxt
         return nodes[0]
-
