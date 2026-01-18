@@ -15,7 +15,7 @@ from .query import (
     parse_query,
 )
 from .fast_ranking import FastRanker
-
+from .quorum import QuorumCandidateGenerator, QuorumConfig
 
 def wildcard_to_regex(pattern: str) -> re.Pattern:
     esc = re.escape(pattern).replace(r"\*", ".*").replace(r"\?", ".")
@@ -41,6 +41,12 @@ class Searcher:
         self.idx = index
         self.ranker = FastRanker(index, ranker_weights)
 
+        self.quorum = QuorumCandidateGenerator(
+            index,
+            tokenize_fn=tokenize,
+            config=QuorumConfig(activate_if_candidates_lt=1000, target=1000, cap=5000),
+        )   
+
 
     def search(self, query: str) -> List[Tuple[int, float]]:
         try:
@@ -50,13 +56,14 @@ class Searcher:
 
         docs = self._eval(ast)
 
-        if len(docs) < 3 and self._is_simple_query(query):
-            docs |= self._eval_quorum_counts(query)
+        if self._is_simple_query(query) and len(docs) < self.quorum.cfg.activate_if_candidates_lt:
+            docs |= self.quorum.generate(query)
 
         if not docs:
             return []
 
         q_terms = [t for t in tokenize(query) if t.isalnum()]
+        q_terms = list(dict.fromkeys(q_terms))
         return self.ranker.get_scores(q_terms, candidate_ids=docs, top_k=10)
 
 
@@ -65,33 +72,16 @@ class Searcher:
         return not any(s in query for s in specials)
     
 
-    def _quorum_k(self, n_terms: int) -> int:
-        k = (n_terms - 1) if n_terms <= 3 else int(n_terms * 0.75)
-        return max(1, k)
-    
+    def candidates(self, query: str) -> Set[int]:
+        try:
+            ast = parse_query(query)
+        except Exception:
+            ast = TermNode(query.lower())
 
-    def _eval_quorum_counts(self, query: str) -> Set[int]:
-        terms = list(dict.fromkeys(t for t in tokenize(query) if t.isalnum()))
-        n = len(terms)
-        if n < 2:
-            return set()
-
-        k = self._quorum_k(n)
-        df = getattr(self.idx, "df", {})
-
-        anchors = sorted(terms, key=lambda t: df.get(t, 10**18))[:2] or terms[:1]
-
-        anchor_docs = set().union(*(self.idx.get_doc_ids(t, None) for t in anchors))
-        if not anchor_docs:
-            return set()
-
-        hit = defaultdict(int)
-        for t in terms:
-            for did in self.idx.get_doc_ids(t, None):
-                if did in anchor_docs:
-                    hit[did] += 1
-
-        return {did for did, c in hit.items() if c >= k}
+        docs = self._eval(ast)
+        if self._is_simple_query(query) and len(docs) < self.quorum.cfg.activate_if_candidates_lt:
+            docs |= self.quorum.generate(query)
+        return docs
 
 
     def _eval(self, node) -> Set[int]:
