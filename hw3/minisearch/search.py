@@ -37,9 +37,9 @@ def edit_distance(s1: str, s2: str) -> int:
 
 
 class Searcher:
-    def __init__(self, index: PositionalIndex):
+    def __init__(self, index: PositionalIndex, ranker_weights):
         self.idx = index
-        self.ranker = FastRanker(index)
+        self.ranker = FastRanker(index, ranker_weights)
 
 
     def search(self, query: str) -> List[Tuple[int, float]]:
