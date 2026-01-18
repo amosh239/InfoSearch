@@ -1,8 +1,6 @@
-import itertools
 from collections import defaultdict
 import re
 from typing import List, Set, Tuple
-import heapq
 
 from markupsafe import Markup
 
@@ -232,31 +230,3 @@ class Searcher:
         end = min(len(text), start + 200)
         snippet = text[start:end]
         return Markup(pattern.sub(r"<mark>\1</mark>", snippet))
-    
-
-    def _balanced_and(self, nodes):
-        nodes = [n for n in nodes if n is not None]
-        if not nodes:
-            return None
-        while len(nodes) > 1:
-            nxt = []
-            it = iter(nodes)
-            for a in it:
-                b = next(it, None)
-                nxt.append(a if b is None else AndNode(a, b))
-            nodes = nxt
-        return nodes[0]
-
-
-    def _balanced_or(self, nodes):
-        nodes = [n for n in nodes if n is not None]
-        if not nodes:
-            return None
-        while len(nodes) > 1:
-            nxt = []
-            it = iter(nodes)
-            for a in it:
-                b = next(it, None)
-                nxt.append(a if b is None else OrNode(a, b))
-            nodes = nxt
-        return nodes[0]
