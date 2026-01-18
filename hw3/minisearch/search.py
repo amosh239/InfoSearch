@@ -36,7 +36,7 @@ class Searcher:
         docs = self._eval(ast)
 
         if len(docs) < 3 and self._is_simple_query(query):
-            print(f"DEBUG: Triggering Quorum for '{query}'")
+            # print(f"DEBUG: Triggering Quorum for '{query}'")
             quorum_ast = self._build_quorum_tree(query)
             if quorum_ast:
                  docs = docs | self._eval(quorum_ast)
@@ -48,32 +48,27 @@ class Searcher:
         return sorted(scored, key=lambda x: -x[1])
 
     def _is_simple_query(self, query: str) -> bool:
-        # Если есть спецсимволы, считаем запрос "продвинутым" и не трогаем
         specials = {'AND', 'OR', 'NOT', 'NEAR', '(', ')', '"', ':', '*'}
         return not any(s in query for s in specials)
 
     def _build_quorum_tree(self, query: str) -> TermNode:
         terms = tokenize(query)
         n = len(terms)
-        if n < 2: return None # Нет смысла упрощать 1 слово
+        if n < 2: return None
         
         min_match = n - 1 if n <= 3 else int(n * 0.75)
         if min_match < 1: min_match = 1
         
-        # Строим комбинации: "A B C" (min=2) -> (A AND B) OR (A AND C) OR (B AND C)
         combs = list(itertools.combinations(terms, min_match))
         
-        # Создаем список узлов AND для каждой комбинации
         and_nodes = []
         for combo in combs:
-            # combo = ('A', 'B') -> TermNode(A) AND TermNode(B)
             nodes = [TermNode(t) for t in combo]
             root = nodes[0]
             for node in nodes[1:]:
                 root = AndNode(root, node)
             and_nodes.append(root)
             
-        # Объединяем их через OR
         if not and_nodes: return None
         final_tree = and_nodes[0]
         for node in and_nodes[1:]:
