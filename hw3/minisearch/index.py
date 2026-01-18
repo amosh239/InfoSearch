@@ -28,8 +28,10 @@ class PositionalIndex:
 
         self._raw = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
-        # self.postings_all = {}
-        # self.df = {}
+        self.postings_all = {}
+        self.df = {}
+
+        self._docset_cache = {}
 
 
     def add_document(self, doc_id: int, fields: Dict[str, str]):
@@ -65,14 +67,32 @@ class PositionalIndex:
 
         self._raw.clear()
 
-    def get_doc_ids(self, term: str, field: str | None = None) -> List[int]:
-        if field is not None:
-            return list(self.postings.get(term, {}).get(field, []))
+        self.postings_all.clear()
+        self.df.clear()
 
-        out: List[int] = []
-        for ids in self.postings.get(term, {}).values():
-            out.extend(ids)
-        return out
+        for term, field_map in self.postings.items():
+            merged = set()
+            for ids in field_map.values():
+                merged.update(ids)
+            merged = sorted(merged)
+            self.postings_all[term] = merged
+            self.df[term] = len(merged)
+
+
+    def get_doc_ids(self, term: str, field: str | None = None) -> list[int]:
+        if field is not None:
+            return self.postings.get(term, {}).get(field, [])
+        return self.postings_all.get(term, [])
+    
+    def get_doc_set(self, term: str, field: str | None = None) -> set[int]:
+        key = (term, field)
+        s = self._docset_cache.get(key)
+        if s is not None:
+            return s
+        ids = self.get_doc_ids(term, field)
+        s = set(ids)
+        self._docset_cache[key] = s
+        return s
 
     def get_pos_map(self, term: str, field: str) -> Dict[int, List[int]]:
         return self._pos_cache.get((term, field), {})

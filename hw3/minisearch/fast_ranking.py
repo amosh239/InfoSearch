@@ -78,26 +78,55 @@ class FastRanker:
         
         print(f"BM25 Matrix built: {self.n_docs} docs x {self.n_terms} terms")
 
-    def get_scores(self, query_terms, candidate_ids=None):
+    def get_scores(self, query_terms, candidate_ids=None, top_k=None):
         term_idxs = [self.term_to_idx[t] for t in query_terms if t in self.term_to_idx]
-        if not term_idxs: return {}
+        if not term_idxs:
+            return [] if top_k is not None else {}
 
-        overlap_scores = np.array(self.matrix_bin[:, term_idxs].sum(axis=1)).flatten()
-        bm25_scores = np.array(self.matrix_bm25[:, term_idxs].sum(axis=1)).flatten()
-        
+        # If we have candidates, score only those rows (big speedup)
+        if candidate_ids is not None:
+            cand_idx = [self.doc_to_idx[d] for d in candidate_ids if d in self.doc_to_idx]
+            if not cand_idx:
+                return [] if top_k is not None else {}
+
+            Mbin = self.matrix_bin[cand_idx, :][:, term_idxs]
+            Mbm  = self.matrix_bm25[cand_idx, :][:, term_idxs]
+
+            overlap = np.asarray(Mbin.sum(axis=1)).ravel()
+            bm25    = np.asarray(Mbm.sum(axis=1)).ravel()
+            scores  = (self.weights[0] * overlap) + (self.weights[1] * bm25)
+
+            if top_k is not None:
+                k = min(int(top_k), len(cand_idx))
+                # Take top-k among candidates without sorting everything
+                top = np.argpartition(-scores, k - 1)[:k]
+                top = top[np.argsort(-scores[top])]
+                return [(self.doc_ids[cand_idx[i]], float(scores[i])) for i in top]
+
+            # Old behavior: return dict for all candidates with score > 0
+            res = {}
+            nz = np.nonzero(scores > 0)[0]
+            for i in nz:
+                res[self.doc_ids[cand_idx[i]]] = float(scores[i])
+            return res
+
+        # No candidate_ids: score all docs (slow, but keep as fallback)
+        overlap_scores = np.asarray(self.matrix_bin[:, term_idxs].sum(axis=1)).ravel()
+        bm25_scores = np.asarray(self.matrix_bm25[:, term_idxs].sum(axis=1)).ravel()
         total_scores = (self.weights[0] * overlap_scores) + (self.weights[1] * bm25_scores)
-        
+
+        if top_k is not None:
+            nz = total_scores.nonzero()[0]
+            if len(nz) == 0:
+                return []
+            scores = total_scores[nz]
+            k = min(int(top_k), len(nz))
+            top = np.argpartition(-scores, k - 1)[:k]
+            top = top[np.argsort(-scores[top])]
+            return [(self.doc_ids[nz[i]], float(scores[i])) for i in top]
+
         results = {}
-        if candidate_ids:
-            for doc_id in candidate_ids:
-                if doc_id in self.doc_to_idx:
-                    idx = self.doc_to_idx[doc_id]
-                    if total_scores[idx] > 0:
-                        results[doc_id] = total_scores[idx]
-        else:
-            non_zero = total_scores.nonzero()[0]
-            for idx in non_zero:
-                doc_id = self.doc_ids[idx]
-                results[doc_id] = total_scores[idx]
-                
+        non_zero = total_scores.nonzero()[0]
+        for idx in non_zero:
+            results[self.doc_ids[idx]] = float(total_scores[idx])
         return results

@@ -1,4 +1,5 @@
 import itertools
+from collections import defaultdict
 import re
 from typing import List, Set, Tuple
 import heapq
@@ -52,44 +53,44 @@ class Searcher:
         docs = self._eval(ast)
 
         if len(docs) < 3 and self._is_simple_query(query):
-            quorum_ast = self._build_quorum_tree(query)
-            if quorum_ast:
-                docs = docs | self._eval(quorum_ast)
+            docs |= self._eval_quorum_counts(query)
 
         if not docs:
             return []
 
         q_terms = [t for t in tokenize(query) if t.isalnum()]
-        scores = self.ranker.get_scores(q_terms, candidate_ids=docs)
-        return heapq.nlargest(10, scores.items(), key=lambda x: x[1])
-
+        return self.ranker.get_scores(q_terms, candidate_ids=docs, top_k=10)
 
     def _is_simple_query(self, query: str) -> bool:
         specials = {"AND", "OR", "NOT", "NEAR", "(", ")", '"', ":", "*", "?", "~"}
         return not any(s in query for s in specials)
-
-
-    def _build_quorum_tree(self, query: str):
-        terms = tokenize(query)
+    
+    def _quorum_k(self, n_terms: int) -> int:
+        k = (n_terms - 1) if n_terms <= 3 else int(n_terms * 0.75)
+        return max(1, k)
+    
+    def _eval_quorum_counts(self, query: str) -> Set[int]:
+        terms = list(dict.fromkeys(t for t in tokenize(query) if t.isalnum()))
         n = len(terms)
         if n < 2:
-            return None
+            return set()
 
-        min_match = n - 1 if n <= 3 else int(n * 0.75)
-        min_match = max(1, min_match)
+        k = self._quorum_k(n)
+        df = getattr(self.idx, "df", {})
 
-        combs = list(itertools.combinations(terms, min_match))
-        if not combs:
-            return None
+        anchors = sorted(terms, key=lambda t: df.get(t, 10**18))[:2] or terms[:1]
 
-        and_nodes = []
-        for combo in combs:
-            term_nodes = [TermNode(t) for t in combo]
-            and_ast = self._balanced_and(term_nodes)
-            if and_ast is not None:
-                and_nodes.append(and_ast)
+        anchor_docs = set().union(*(self.idx.get_doc_ids(t, None) for t in anchors))
+        if not anchor_docs:
+            return set()
 
-        return self._balanced_or(and_nodes)
+        hit = defaultdict(int)
+        for t in terms:
+            for did in self.idx.get_doc_ids(t, None):
+                if did in anchor_docs:
+                    hit[did] += 1
+
+        return {did for did, c in hit.items() if c >= k}
 
 
 
@@ -109,18 +110,27 @@ class Searcher:
         return set()
 
 
-    def _eval_term(self, node: TermNode) -> Set[int]:
-        terms = {node.term}
+    def _eval_term(self, node: TermNode) -> set[int]:
+        # Normal term
+        if not node.wildcard and node.fuzzy <= 0:
+            return set(self.idx.get_doc_ids(node.term, node.field))
+
+        # Wildcard
         if node.wildcard:
             rx = wildcard_to_regex(node.term)
-            terms = {t for t in self.idx.postings if rx.match(t)}
-        elif node.fuzzy > 0:
-            terms = {t for t in self.idx.postings if edit_distance(t, node.term) <= node.fuzzy}
+            out = set()
+            for t in self.idx.postings:
+                if rx.match(t):
+                    out.update(self.idx.get_doc_ids(t, node.field))
+            return out
 
-        docs: Set[int] = set()
-        for t in terms:
-            docs.update(self.idx.get_doc_ids(t, node.field))
-        return docs
+        # Fuzzy
+        out = set()
+        for t in self.idx.postings:
+            if edit_distance(t, node.term) <= node.fuzzy:
+                out.update(self.idx.get_doc_ids(t, node.field))
+        return out
+
 
 
     def _eval_near(self, node: NearNode) -> Set[int]:
