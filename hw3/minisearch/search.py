@@ -4,6 +4,7 @@ from markupsafe import Markup
 from .index import PositionalIndex, tokenize
 from .query import parse_query, TermNode, PhraseNode, NearNode, AndNode, OrNode, NotNode
 from .ranking import L1Ranker, FeatureExtractor
+from .fast_ranking import FastRanker
 
 def wildcard_to_regex(pattern: str) -> re.Pattern:
     esc = re.escape(pattern).replace(r'\*', '.*').replace(r'\?', '.')
@@ -23,9 +24,7 @@ def edit_distance(s1: str, s2: str) -> int:
 class Searcher:
     def __init__(self, index: PositionalIndex):
         self.idx = index
-        w_path = os.path.join(os.path.dirname(__file__), 'weights.json')
-        self.weights = json.load(open(w_path)) if os.path.exists(w_path) else [0.1, 1.0, 0.1]
-        self.ranker = L1Ranker(FeatureExtractor(index), self.weights)
+        self.ranker = FastRanker(index)
 
     def search(self, query: str) -> List[Tuple[int, float]]:
         try: 
@@ -44,8 +43,8 @@ class Searcher:
         if not docs: return []
         
         q_terms = [t for t in tokenize(query) if t.isalnum()]
-        scored = [(d, self.ranker.score(d, q_terms)) for d in docs]
-        return sorted(scored, key=lambda x: -x[1])
+        scores = self.ranker.get_scores(q_terms, candidate_ids=docs)
+        return sorted(scores.items(), key=lambda x: -x[1])
 
     def _is_simple_query(self, query: str) -> bool:
         specials = {'AND', 'OR', 'NOT', 'NEAR', '(', ')', '"', ':', '*'}
