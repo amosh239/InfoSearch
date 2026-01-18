@@ -54,6 +54,14 @@ class QuorumCandidateGenerator:
                     if len(out) >= self.cfg.target:
                         break
 
+        if len(out) > self.cfg.target:
+            top = heapq.nlargest(
+                self.cfg.target,
+                ((did, score.get(did, 0.0)) for did in out),
+                key=lambda x: x[1],
+            )
+            out = {did for did, _ in top}
+
         # cap
         if len(out) > self.cfg.cap:
             top = heapq.nlargest(
