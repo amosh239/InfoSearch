@@ -37,16 +37,13 @@ def edit_distance(s1: str, s2: str) -> int:
 
 
 class Searcher:
-    def __init__(self, index: PositionalIndex, ranker_weights):
+    def __init__(self, index: PositionalIndex, Ranker: FastRanker, QuorumGenerator: QuorumCandidateGenerator):
         self.idx = index
-        self.ranker = FastRanker(index, ranker_weights)
+        self.ranker = Ranker
+        self.quorum = QuorumGenerator
 
-        self.quorum = QuorumCandidateGenerator(
-            index,
-            tokenize_fn=tokenize,
-            config=QuorumConfig(activate_if_candidates_lt=1000, target=1000, cap=5000),
-        )   
-
+    def _set_quotum(self, new_quorumGenerator: QuorumCandidateGenerator):
+        self.quorum = new_quorumGenerator
 
     def search(self, query: str) -> List[Tuple[int, float]]:
         try:
@@ -161,7 +158,6 @@ class Searcher:
         field = node.field
         fields = [field] if field else list(self.idx.fields)
 
-        # Preload positional maps once
         pos = {t: {f: self.idx.get_pos_map(t, f) for f in fields} for t in node.terms}
 
         results: Set[int] = set()

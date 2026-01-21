@@ -3,6 +3,23 @@ from scipy.sparse import csr_matrix
 from collections import defaultdict
 
 
+def _min_abs_distance(pos_a, pos_b):
+    i, j = 0, 0
+    best = 10**9
+    while i < len(pos_a) and j < len(pos_b):
+        a, b = pos_a[i], pos_b[j]
+        d = abs(a - b)
+        if d < best:
+            best = d
+            if best == 0:
+                return 0
+        if a < b:
+            i += 1
+        else:
+            j += 1
+    return best
+
+
 class FastRanker:
     def __init__(self, index, weights=None):
         self.index = index
@@ -10,8 +27,13 @@ class FastRanker:
         # weights: [w_overlap, w_bm25, w_coverage, w_title_anchor]
         self.weights = weights if weights is not None else [1.0, 1.0]
 
+        # BM25 params
         self.k1 = 1.2
         self.b = 0.75
+
+        # proxy params
+        self.prox_tau = 4.0
+        self.prox_field = "body"
 
         self._init_docs()
         self._init_terms()
@@ -119,12 +141,48 @@ class FastRanker:
             return slice(None), None
         cand_idx = [self.doc_to_idx[d] for d in candidate_ids if d in self.doc_to_idx]
         return cand_idx, cand_idx
-
-    def _weights4(self):
+    
+    def _weights5(self):
         w = list(self.weights)
-        if len(w) < 4:
-            w += [0.0] * (4 - len(w))
-        return float(w[0]), float(w[1]), float(w[2]), float(w[3])
+        if len(w) < 5: w += [0.0] * (5 - len(w))
+        return float(w[0]), float(w[1]), float(w[2]), float(w[3]), float(w[4])
+
+    def _anchor_prox_feature(self, anchor_terms, doc_ids_sel):
+        """
+        Anchor proximity:
+        берём якорные термы и суммируем exp(-dist/tau) по всем парам якорей,
+        где dist = минимальная дистанция между любыми вхождениями двух термов в документе.
+        Нормируем на число пар.
+        """
+        if len(anchor_terms) < 2:
+            return np.zeros(len(doc_ids_sel), dtype=np.float32)
+
+        pos_maps = [self.index.get_pos_map(t, self.prox_field) for t in anchor_terms]
+        out = np.zeros(len(doc_ids_sel), dtype=np.float32)
+
+        tau = float(self.prox_tau) if self.prox_tau and self.prox_tau > 0 else 1.0
+
+        k = len(anchor_terms)
+        denom = (k * (k - 1)) / 2.0
+        denom = denom if denom > 0 else 1.0
+
+        for i_doc, did in enumerate(doc_ids_sel):
+            lists = [pm.get(did) for pm in pos_maps]
+            s = 0.0
+            for i in range(k):
+                pi = lists[i]
+                if not pi:
+                    continue
+                for j in range(i + 1, k):
+                    pj = lists[j]
+                    if not pj:
+                        continue
+                    dist = _min_abs_distance(pi, pj)
+                    s += float(np.exp(-float(dist) / tau))
+            out[i_doc] = np.float32(s / denom)
+
+        return out
+
 
     def get_scores(self, query_terms, candidate_ids=None, top_k=None):
         term_idxs = self._term_indices(query_terms)
@@ -135,7 +193,7 @@ class FastRanker:
         if candidate_ids is not None and not row_sel:
             return [] if top_k is not None else {}
 
-        w_overlap, w_bm25, w_cov, w_title = self._weights4()
+        w_overlap, w_bm25, w_cov, w_title, w_prox = self._weights5()
 
         idf_sub = self.idf[term_idxs]
         idf_sum = float(idf_sub.sum())
@@ -155,9 +213,8 @@ class FastRanker:
         else:
             coverage = np.zeros_like(overlap)
 
-        # 4) NEW: anchor-in-title (0/1)
+        # 4) anchor-in-title (0/1)
         if self.matrix_title is not None and w_title != 0.0:
-            # якоря = 1-2 самых "редких" терма запроса, т.е. с максимальным idf
             k_anchors = 2 if len(term_idxs) >= 2 else 1
             a_local = np.argpartition(-idf_sub, k_anchors - 1)[:k_anchors]
             anchor_term_idxs = [term_idxs[i] for i in a_local]
@@ -167,11 +224,30 @@ class FastRanker:
         else:
             title_hit = np.zeros_like(overlap, dtype=np.float32)
 
+        # 5) anchor proximity (top-4 by idf, soft exp decay)
+        if w_prox != 0.0 and len(term_idxs) >= 4:
+            k_anchors = min(4, len(term_idxs))
+
+            # индексы (внутри term_idxs) k самых редких термов запроса
+            a_local = np.argsort(-idf_sub)[:k_anchors]
+            anchor_term_idxs = [term_idxs[i] for i in a_local]
+            anchor_terms = [self.terms[t_idx] for t_idx in anchor_term_idxs]
+
+            if isinstance(row_sel, slice):
+                doc_ids_sel = self.doc_ids
+            else:
+                doc_ids_sel = [self.doc_ids[i] for i in row_sel]
+
+            prox = self._anchor_prox_feature(anchor_terms, doc_ids_sel)
+        else:
+            prox = np.zeros_like(overlap, dtype=np.float32)
+
         scores = (
             w_overlap * overlap
             + w_bm25 * bm25
             + w_cov * coverage
             + w_title * title_hit
+            + w_prox * prox
         )
 
         if top_k is not None:
