@@ -100,3 +100,23 @@ def eval_ranking(searcher, queries_df, qrels, int_to_str_id, ks=(1, 10, 100), to
         out[f"MRR@{k}"] = float(np.mean(mrr_scores[k])) if mrr_scores[k] else 0.0
         out[f"NDCG@{k}"] = float(np.mean(ndcg_scores[k])) if ndcg_scores[k] else 0.0
     return out
+
+
+# L2 ranking
+def make_doc_text_map(docs_df, id_col="doc_id", text_col="text"):
+    return dict(zip(docs_df[id_col].astype(str).tolist(), docs_df[text_col].astype(str).tolist()))
+
+
+def rerank_with_cross_encoder(searcher, query, results_int, int_to_str_id, doc_text, ce, rerank_k=50):
+    top = results_int[:rerank_k]
+    rest = results_int[rerank_k:]
+
+    pairs = []
+    for did in top:
+        sid = int_to_str_id[did]
+        pairs.append((query, doc_text.get(sid, "")))
+
+    scores = ce.predict(pairs)
+    order = list(sorted(range(len(top)), key=lambda i: float(scores[i]), reverse=True))
+    reranked = [top[i] for i in order] + rest
+    return reranked
