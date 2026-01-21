@@ -70,3 +70,33 @@ def build_index(docs_df):
     
     index.commit()
     return index, int_to_id
+
+
+def eval_ranking(searcher, queries_df, qrels, int_to_str_id, ks=(1, 10, 100), top_k=100):
+    import numpy as np
+    from tqdm import tqdm
+    import metrics  # notebooks/metrics.py
+
+    mrr_scores = {k: [] for k in ks}
+    ndcg_scores = {k: [] for k in ks}
+
+    for _, row in tqdm(queries_df.iterrows(), total=len(queries_df), desc="Evaluating"):
+        qid = int(row["query_id"])
+        if qid not in qrels:
+            continue
+
+        text = row["text"]
+        targets = qrels[qid]
+
+        results_int = [doc_id for doc_id, _ in searcher.search(text, top_k=top_k)]
+        results_str = [int_to_str_id[i] for i in results_int]
+
+        for k in ks:
+            mrr_scores[k].append(metrics.mrr(results_str, targets, k=k))
+            ndcg_scores[k].append(metrics.ndcg(results_str, targets, k=k))
+
+    out = {}
+    for k in ks:
+        out[f"MRR@{k}"] = float(np.mean(mrr_scores[k])) if mrr_scores[k] else 0.0
+        out[f"NDCG@{k}"] = float(np.mean(ndcg_scores[k])) if ndcg_scores[k] else 0.0
+    return out

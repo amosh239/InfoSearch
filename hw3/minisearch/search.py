@@ -45,7 +45,7 @@ class Searcher:
     def _set_quotum(self, new_quorumGenerator: QuorumCandidateGenerator):
         self.quorum = new_quorumGenerator
 
-    def search(self, query: str) -> List[Tuple[int, float]]:
+    def search(self, query: str, top_k: int = 10) -> List[Tuple[int, float]]:
         try:
             ast = parse_query(query)
         except Exception:
@@ -61,7 +61,7 @@ class Searcher:
 
         q_terms = [t for t in tokenize(query) if t.isalnum()]
         q_terms = list(dict.fromkeys(q_terms))
-        return self.ranker.get_scores(q_terms, candidate_ids=docs, top_k=10)
+        return self.ranker.get_scores(q_terms, candidate_ids=docs, top_k=top_k)
 
 
     def _is_simple_query(self, query: str) -> bool:
